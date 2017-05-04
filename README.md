@@ -1,2 +1,9 @@
 # Prosper-Loan-Exploratory-Analysis
-Exploratory data analysis of Prosper Loans in R
+Exploratory data analysis of Prosper Loans in R.
+Large dataset with many factor variables.
+The context of loan related information like APR, Credit Score, Lender Credit Score is familiar to many, however, it should be noted that this is a niche lending.
+Prosper specializes in short term risky cash loans and usual assuptions may not always apply there. 
+For example there is no clear correlation between credit score and APR. Also some income levels and professions were not getting low APRs as expected. 
+Prosper is a niche lender serving the market not covered by traditional banking - i.e. those who exhausted other options or who were not granted loans by banks. 
+It was interesting to explore occupation vs credit ratings (both Prosper and Credit Score) and it gave lots of insights to the data. 
+I would further research on what Prosper bases its rating - what is the most important factor? Is it income level, number of loans, debt to income ratio? Does state location have any bearing on the Prosper rating and APR?
