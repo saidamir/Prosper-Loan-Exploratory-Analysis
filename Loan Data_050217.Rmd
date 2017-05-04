@@ -1,0 +1,260 @@
+---
+title: "Loan data"
+author: "Aziz Mamatov"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(rgeos)
+library(gpclib)
+library(maptools)
+library(sp)
+library(grid)
+library(gridExtra)
+library(GGally)
+library(plotly)
+```
+
+## Dataset parameters
+The document is not very large so we can analyze it in full without creating a sample. For large document we would need to create a sample, say choosing each 10th or 100th data points.
+There are 81 variables with 113937 observations. There are several factor variables. Clearly we need to focus on certain variables as there are too much data. 
+Variable_list is a list of all variables with type of variables explained. Some factor variables are clearly not factor as there are too many sets, like ClosedDate has 2803 levels.
+
+
+```{r results='hide'}
+loans <- read.csv('prosperloandata.csv')
+summary(loans)
+str(loans)
+dim(loans)
+```
+
+## Potential issues
+
+This is a loan performance data from Prosper and from the dictionary. I would like to explore the dependency of certain variables on others like Loan status, EmploymentStatus, Occupation, CreditGrade, Incomerange, LoanOriginalAmount, ProsperRating, CreditGrade, BorrowerState, LoanOriginalAmount, ProsperScore, ProsperPaymentsOneMonthPlusLate   
+
+From looking at individual columns we can see from that there are way too many occupations to be a factor variable. But ProsperRating, CreditGrade and ProsperScore look promising.
+
+
+## Initial analysis - Prosper Rating and BorrowerAPR
+We can start with Rating and APR information as being one of the most imporant outcomes of the loan process. We can see below that for Rating the histogram is fairly symmetrical with defined mean value around 4.
+
+```{r Prosper rating}
+ggplot(data = loans) +
+  geom_histogram(aes(x = ProsperRating..numeric.), color = 'blue', binwidth = 0.5, alpha = 0.5)+
+  scale_x_continuous(breaks = seq(0, 7, 1))
+```
+For the Borrower APR there is clear preference of the rate to be around 38% while the rest of the APR is fairly distributed.
+```{r}
+ggplot(data = loans) +
+  geom_histogram(aes(x = BorrowerAPR), color = 'blue', binwidth = 0.01, alpha = 0.5)+
+  scale_x_continuous(breaks = seq(0, 0.45, 0.05))
+```
+
+There is another way to look at data and to determine what is the most frequen rate, apparently it is not 36% but rather 17% (see below)
+
+```{r}
+ggplot(aes(x = BorrowerAPR), data = loans, binwidth = 0.01) + 
+  geom_freqpoly(aes(color = BorrowerAPR)) +
+  scale_x_continuous(breaks = seq(0, 0.45, 0.02), limits = c(0, 0.45))
+```
+
+
+Now we will focus is on the amount of borrowing between 30 and 40%, where it is apparent that the 36% rate is the most prevalent.
+
+```{r}
+ggplot(data = loans) +
+  geom_histogram(aes(x = BorrowerAPR), color = 'blue', binwidth = 0.01, alpha = 0.5)+
+  scale_x_continuous(breaks = seq(0.3, 0.45, 0.01), limits = c(0.3, 0.4))
+```
+## Initial research on loans - Bivariable
+Below is an attempt to figuring out dependencies between two variables by plotting few variables against one another. There is a dependency between Borrower APR and Prosper Rating both in graph and correlation, and there is an interesting distribution of Borrower APR by Income range. We will investigate those further.
+```{r}
+ggpairs(loans[,c("BorrowerAPR", "ProsperRating..numeric.","IncomeRange" )], lower = list(continuous = wrap("smooth", method = "lm")))
+```
+
+## Bivariant analysis - APR and Ratings
+
+Now it's a time to combine to variables - APR and Ratings. Below are histograms for Borrower APR divided by ProsperRating. Most widely distributed are loans APR within ratings 4 and 6 while the narrow distribution is for rating 1. Probably, borrowers with this rating are getting the maximum possible rate or not getting the loan at all.
+
+```{r}
+apr_rating<-loans[,c("BorrowerAPR", "ProsperRating..numeric.")]
+ggplot(data = apr_rating) + geom_histogram(aes(x = BorrowerAPR), color = 'blue', binwidth = 0.01, alpha = 0.5)+
+  scale_x_continuous(breaks = seq(0, 0.45, 0.05))+
+  facet_wrap(~ProsperRating..numeric.,ncol = 2)
+  
+```
+
+We are exploring the dependency of ProsperRating vs BorrowerAPR and clearly the higher the rate the lowever is APR. The correlation line proves it as well as the correlation coefficient which is -0.96
+```{r}
+ggplot(aes(x = ProsperRating..numeric., y = BorrowerAPR), data = loans) + 
+  geom_point() + xlim(0,7) +scale_x_continuous(breaks = seq(0, 7, 1)) + scale_y_continuous(breaks = seq(0,0.45,0.05))+
+  geom_smooth(method=lm , color="red", se = TRUE) 
+cor(loans$ProsperRating..numeric., loans$BorrowerAPR, use = "complete.obs")
+```
+
+Boxplot will help to explore further this dependency. As we can see from below, median APR are surely decreasing with the Rating increase. There is wide variety of rates in the lowest rating category 1. However, overall, borrowers with rating 1 can obtain loans with the same APR as borrowers all ratings, even at the highest 7 rate. There is an outlier there.
+
+```{r}
+boxplot(BorrowerAPR~ProsperRating..numeric., data = loans, xlab = "Rating", ylab = "APR")
+```
+
+# Loan amount vs income range 
+We can see that the majority of loans are given to borrowers with income range between 75 -100K, with very small amount of borrowers with 100K+ income range. It is logical and higher earning borrowers probably don't need cash loans or have better deals at traditional banks. We will leave this exploration as it is.
+```{r loans, echo=FALSE}
+ggplot(data = loans) +
+  geom_histogram(aes(x = LoanOriginalAmount), color = 'red', alpha = 0.5) +
+  facet_wrap(~IncomeRange,ncol = 2)
+```
+
+## Rating 1 investigation
+What is going on with rating 1, what states, professions, income level and other characteristics it represents? First we will create a table to focus on some of the most interesting variables. Then we will build a APR histograph on a log scale to show all the values, as APR rate for rating
+
+```{r}
+table_rating <- loans[c("ProsperRating..numeric.", "BorrowerAPR", "BorrowerState", "Occupation", "EmploymentStatus", "IncomeRange")]
+rating_1<-subset(table_rating, ProsperRating..numeric.== 1)
+ggplot(data = rating_1) + geom_histogram(aes(x = BorrowerAPR), color = 'blue', binwidth = 0.01, alpha = 0.5)+
+  scale_x_continuous(breaks = seq(0.15, 0.45, 0.01)) + scale_y_log10() + xlab('Borrower APR where rating = 1')
+```
+### Occupations in Rating 1
+We will explore the most frequent occupation which were rated the lowest rating 1. Clearly there is a leader.
+```{r}
+ggplot(data = rating_1) + geom_histogram(aes(x = Occupation), stat = "count", color = 'red', binwidth = 0.01, alpha = 0.5)+
+  scale_x_discrete() + xlab('Occupations')
+```
+Leader is unfortunately "Other", so we will get rid of that.
+
+```{r results='hide'}
+summary(rating_1$Occupation)
+```
+The top occupation in rating 1 is "Professional" followed by Adminstrative Assistant and Teacher.
+
+```{r results='hide'}
+valid_occupation_rate_1<-subset(rating_1, Occupation != "Other")
+summary(valid_occupation_rate_1)
+```
+  
+I want to explore further the Occupation "Professional" as it very ambiguous. As you can see below majority of this occupation earns from 50 to above 100K. It means that this occupation has a varied pay based probably on firm and experience.
+
+```{r}
+occupation_prof<-subset(table_rating, Occupation == "Professional")
+ggplot(data = occupation_prof) + geom_histogram(aes(x = BorrowerAPR), color = 'blue', binwidth = 0.01, alpha = 0.5)+
+  scale_x_continuous(breaks = seq(0, 0.45, 0.05))+
+  facet_wrap(~IncomeRange,ncol = 2)
+```
+
+
+I want to see the distribution of income between Income Range and Employement Status duration but there is not really any meaningful distribution as the length of employment status is not long. Probably because the data does not cover sufficient time span.
+
+```{r}
+occupation_duration <- loans[c("Occupation", "EmploymentStatusDuration", "IncomeRange")]
+duration_prof<-subset(occupation_duration, Occupation = "Professional")
+ggplot((duration_prof), aes(EmploymentStatusDuration, fill =IncomeRange)) + geom_bar() + scale_y_log10()+ scale_x_continuous(breaks = seq(200, 400, 50), limits = c(200, 400))
+#ggplot(data = duration_prof, aes(x = EmploymentStatusDuration, y = IncomeRange, group =IncomeRange)) + geom_line()
+
+```
+I have done the above but in percentage terms. There is still not clear dependency of higher salary vs Employment Status Duration.
+```{r}
+ggplot(loans, aes(EmploymentStatusDuration)) +
+  geom_bar(aes(fill = IncomeRange), position = "fill")
+```
+### New table with Occupation data  
+  Now I am going to create a long table with the following colums - Occupation, median_BorrowerAPR, mean_ProsperRating..numeric., median_CreditScoreRangeUpper. By aggregating data to tables and then merging the data. I would like to explore dependencies of different variables on Occupation.
+  
+```{r}
+occupations_BorrowerAPR <- aggregate(x = loans$BorrowerAPR, # the variable to aggregate
+                          by = list(loans$Occupation), # how to group it
+                          FUN = median, # function to apply
+                          na.rm = TRUE) # remove any NaNs 
+occupations_ProsperRating <-aggregate(x = loans$ProsperRating..numeric., # the variable to aggregate
+                          by = list(loans$Occupation), # how to group it
+                          FUN = median, # function to apply
+                          na.rm = TRUE)
+occupations_CreditScore<- aggregate(x = loans$CreditScoreRangeUpper, # the variable to aggregate
+                          by = list(loans$Occupation), # how to group it
+                          FUN = median, # function to apply
+                          na.rm = TRUE)
+occupation_master1 <- merge(occupations_CreditScore, occupations_ProsperRating, by = c("Group.1"), how = "outer")
+occupation_master<-merge(occupation_master1, occupations_BorrowerAPR, by = c("Group.1"), how = "inner")
+colnames(occupation_master)<-c("Occupation", "CreditScore", "ProsperRating", "BorrowerAPR")
+str(occupation_master)
+```
+#APR vs CreditScore vs Occupation
+Majority of occupations are scored under 700 and 720 where the highest APR was granted to Teacher's and Nurse's Aide. Students had lower score but lower APR as well, reflecting on their good potential for lenders. Surprising, an occupation Investor had a pretty high Credit Score but high APR as well. This indicates that even thought this person must be wealthy and have good credit score, probably his or her other parameters were risky.
+```{r}
+g <- ggplot(occupation_master, aes(x=CreditScore, y=BorrowerAPR, color = Occupation)) + 
+  geom_point(shape=1) +
+  theme(legend.position="none")
+ ggplotly(g)
+```
+
+
+### Credit score and APR correlation
+I want to see what is the correlation between - credit score and APR as below. There is low correlation (-0.43) between BorrowerAPR and Credit score which is somewhat surprising but given that it is a cash based loan, given to borrowers who exhausted other more traditional banking options it makes sense.
+
+```{r}
+ggplot(loans, aes(x = CreditScoreRangeUpper, y = BorrowerAPR))+
+  geom_point(alpha = 0.1) + 
+  scale_x_continuous(limits = c(470, 770)) +
+    geom_smooth(method=lm , color="red", se = TRUE) 
+cor(loans$CreditScoreRangeUpper, loans$BorrowerAPR, use = "complete.obs")
+```
+
+### Occupations of low APR and low Credit Score
+There are few occupations which get low APR and have low credit score suprisingly. 
+```{r}
+low_score_low_apr<-subset(loans, loans$CreditScoreRangeUpper < 600 & loans$BorrowerAPR < 0.1)
+
+ggplot((low_score_low_apr), aes(BorrowerAPR, fill =Occupation)) + geom_bar() +
+scale_x_continuous(limits = c(0, 0.1))
+```
+
+
+## Final Plots and Summary
+### APR vs CreditScore vs Occupation
+Majority of occupations are scored under 700 and 720 where the highest APR was granted to Teacher's and Nurse's Aide. Students had lower score but lower APR as well, reflecting on their good potential for lenders. Surprising, an occupation Investor had a pretty high Credit Score but high APR as well. This indicates that even thought this person must be wealthy and have good credit score, probably his or her other parameters were risky.
+
+```{r}
+g <- ggplot(occupation_master, aes(x=CreditScore, y=BorrowerAPR, color = Occupation)) + 
+  geom_point(shape=1) +
+  theme(legend.position="none")+
+  scale_y_continuous(labels = scales::percent) + 
+  labs(title = "APR/Rating/Occupation")
+ ggplotly(g)
+```
+
+### Credit score vs APR
+I want to see what is the correlation between - credit score and APR as below. There is low correlation (-0.43) between BorrowerAPR and Credit score which is somewhat surprising but given that it is a cash based loan, given to borrowers who exhausted other more traditional banking options it makes sense.
+
+```{r}
+ggplot(loans, aes(x = CreditScoreRangeUpper, y = BorrowerAPR))+
+  geom_point(alpha = 0.1) + 
+  scale_x_continuous(limits = c(470, 770)) +
+  scale_y_continuous(labels = scales::percent)+
+    geom_smooth(method=lm , color="red", se = TRUE) +
+  labs(title = "Credit Score vs APR")
+cor(loans$CreditScoreRangeUpper, loans$BorrowerAPR, use = "complete.obs")
+```
+### Occupation Professional and APR
+The occupation "Professional" as it very ambiguous. As you can see below majority of this occupation earns from 50 to above 100K. It means that this occupation has a varied pay based probably on type of work and experience. It is not a great indicator of the borrower's credibility though.
+
+```{r}
+occupation_prof<-subset(table_rating, Occupation == "Professional")
+ggplot(data = occupation_prof) + geom_histogram(aes(x = BorrowerAPR), color = 'blue', binwidth = 0.01, alpha = 0.5)+
+  scale_x_continuous(labels = scales::percent, breaks = seq(0, 0.45, 0.05))+
+  labs(title = "Occupation - Professional vs Income Level vs APR")+
+  facet_wrap(~IncomeRange,ncol = 2)
+```
+
+
+### Reflection
+It is a a large set with many factor like variables. The context of loan related information like APR, Credit Score, Lender Credit Score is familiar to many, however, it should be noted that this is a different type of lending. 
+Prosper specializes in short term risky cash loans and usual assuptions may not always apply there. Like there is not clear correlation between credit score and APR. Also some income levels and professions were not getting low APRs as expected. 
+It is probably because Prosper is a niche lender serving the market not covered by traditional banking - i.e. those who exhausted other options or who were not granted loans by banks. 
+It was interesting to explore occupation vs credit ratings (both Prosper and Credit Score) and it gave lots of insights to the data. I would further research on what Prosper bases its rating - what is the most important factor? Is it income level, number of loans, debt to income ratio? Does state location have any bearing on the Prosper rating and APR?
