@@ -1,5 +1,5 @@
 # Prosper-Loan-Exploratory-Analysis
-Exploratory data analysis of Prosper Loans in R - summary. Please refer to HTML file for full analysis.
+Exploratory data analysis of Prosper Loans in R - summary. ### Please refer to HTML file for full analysis.
 
 Large dataset with many factor variables.
 The context of loan related information like APR, Credit Score, Lender Credit Score is familiar to many, however, it should be noted that this is a niche lending.
