@@ -1,5 +1,5 @@
 # Prosper-Loan-Exploratory-Analysis
-### Please refer to HTML file for full analysis
+### Please refer to Loan_Data_051017.html for full analysis
 Exploratory data analysis of Prosper Loans in R - summary. 
 
 Large dataset with many factor variables.
